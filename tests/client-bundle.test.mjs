@@ -593,11 +593,15 @@ test('the section reads its namespace and renders the subscription list as the p
     page.find((node) => typeof node.props?.title === 'string' && /来源 file/.test(node.props.title)).length > 0,
     'where the value came from stays in the tooltip',
   )
-  assert.match(page.text, /凭据存储/u)
   assert.ok(
     page.find((node) => typeof node.props?.title === 'string' && /\.credentials\.yaml/.test(node.props.title)).length > 0,
     'the exact store path stays one hover away',
   )
+  // The key field carries NO hint line: the store promise lives in the slot
+  // tooltip above and in the pill, and the field itself stays one clean input
+  // under 「名字」(the page adds no explanatory rows).
+  assert.ok(!page.text.includes('不落明文'), 'the key field has no hint paragraph')
+  assert.equal(page.control('subscriptions[0].apiKey').props.hint, undefined)
   // The key field is a password input whose own VALUE is empty.
   const key = page.control('subscriptions[0].apiKey')
   assert.equal(key.props.type, 'password')

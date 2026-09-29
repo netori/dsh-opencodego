@@ -28,8 +28,13 @@ dsh plugin --profile web add /absolute/path/to/dsh-opencodego
 
 # 发布包
 npm pack
-dsh plugin --profile web add ./dsh-opencodego-0.9.0.tgz
+dsh plugin --profile web add ./dsh-opencodego-0.9.1.tgz
 ```
+
+> 0.9.1 起要求 **dsh ≥ 0.1.7-rc.1**(设置面改成 schema 派生、图片卸载改由宿主记账,两处接口都是
+> 0.1.7 才有的);peer 范围同时覆盖 **0.2 线(0.2.0-rc.1 起)**——两代的 `dsh-llm` 图片接口、
+> `dsh-settings` 注册接口、`dsh-attachment` 的请求目标、`webServer.register` 实测一致。
+> 装完设置页写入落在 `$DSH_HOME/profiles/<name>/cordis.patch.yml`。
 
 卸载:`dsh plugin --profile web remove dsh-opencodego`
 

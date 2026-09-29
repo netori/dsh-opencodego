@@ -116,6 +116,40 @@ scripts/             获取数据 / 探针 / e2e-active-sub(离线假网关验�
 18. **`projection()` 绝不出值**:生效变量的**名字**、active id、失败原因可以给浏览器,**值不行**。
     它在运行时里只用于跳过重复写入。0.8.3 第一版把它放进了 `/usage` 载荷,等于把当前 key 发给页面——
     改回去就是把这个插件的凭据承诺作废(`tests/subruntime.test.mjs` 断言 `'value' in projection() === false`)。
+19. **设置面 = Config schema 里标了 `.volatile()` 的那些字段(0.1.7 起)**:`settings.installSection` 已经
+    不存在,宿主给页面的描述符**只带 volatile 字段**,写非 volatile 路径会被直接拒(`Config field "x" is not
+    volatile`)。所以**页面读什么、写什么,`src/config.js` 就必须把那些字段标上 `.volatile()`**,漏一个就是
+    两种静默故障:读的漏标 = 页面拿不到值、自己填默认值还当真;写的漏标 = 每次保存都被拒。
+    `apiKey` 永不 volatile(它是 secret,走 `secrets` 侧面)。`tests/volatile-contract.test.mjs` 两面都钉着
+    ("页面读的集合 == volatile 集合" + "页面写的每条路径都 volatile"),加字段/改页面时它会红。
+    注册只剩一句 `settings.configure({ auto: false }, ctx.fiber)`(意思:这个条目自带页面,别自动生成);
+    **没有 `setSource`**,而且**`apply` 不会因为一次设置写而重跑**(0.2.0 起,见下条):设置写进 profile
+    patch,宿主把新值**提交进那条 config 里 volatile 引用本身**(`Entry#_commitVolatile`),对象身份不变,
+    所以 `current` 保持 `() => config`,但**读它的那一步必须是活的**(`config.js#createOptionsReader`:
+    每次读都重新 resolve,事实没变才复用上一个对象)。
+    设置值落在 `$DSH_HOME/profiles/<name>/cordis.patch.yml`,`settings.yaml` 只剩一次性迁移。
+     **volatile 字段是引用,不是值**:有了 schema 之后宿主会在 `apply` 之前用它校验配置
+     (`runtime.Config['~standard'].validate`),每个 volatile 字段以 cosmokit 引用到达(`.get()` 才是值;
+     `String(ref)` 就是 `[object Object]`)。所以**解引用只做一次、就在 `src/config.js#resolveOptions`
+     入口**(`plainConfig`;判定用宿主的 `isVolatile`,不靠形状猜——`isVolatile({get(){}})` 是 false)。
+    漏了这步 = 启动即 `baseURL must be an absolute http(s) URL (got: [object Object])`,整条条目不激活。
+20. **设置写是"就地改引用",不是"重载条目"——所以不许按对象身份做缓存(0.2.0 实测)**:
+    `cordis-plugin-loader#Entry.update` 用 `equalExceptVolatile` 判定这次 config 变化**全是** schema-volatile
+    字段(页面能写的路径按定义全是,`dsh-settings#write` 会拒非 volatile 路径),成立就走 `_commitVolatile()`:
+    把新值写进**运行中那条 config 的引用**、发 `loader/volatile-update`,**不重跑 `apply`**。
+    后果:任何 `raw === lastRaw` 式记忆(旧 `options()` 就是)会把加载那一刻的事实**永久**答下去——
+    页面显示的订阅宿主根本没听过(没有余额行、没有探针、付款人还是上一条)、
+    `models.disabled/extra` 永远不生效(目录 effective 0,「同步/启用模型」全都不落地)。
+    `options()` 现在走 `createOptionsReader`(每次重新 resolve + `deepEqual` 比对,事实没变复用旧对象,
+    保住 adapter 依赖的身份稳定);它**不依赖**那个事件名,所以宿主再换机制也不会静默失灵。
+    `tests/volatile-contract.test.mjs` 用真的 `createVolatile`/`updateVolatile` 钉着"就地写必须被看见",
+    外加一条源码守卫(`lastRaw` 不许回来)。
+21. **`export default` 里必须带 `Config`**:cordis 的 `unwrapExports` **优先 default**
+    (`exports.default ?? exports`),registry 再用它建 runtime(`Config: plugin.Config`),而 settings 从
+    runtime 读 schema(`entry.fiber.runtime.Config`;拿不到就 `describe()` 跳过该条目)。default 少 `Config`
+    的后果**不是降级而是静默**:插件照常加载、apply、开 HTTP 路由,只有设置页报
+    「设置里没有命名空间 opencode-go-native」——0.1.7 起一直如此,因为没有任何测试看过"加载器拿到的那个对象"。
+    `tests/loader-contract.test.mjs` 按加载器的规则解包 `lib/` 与 `src/` 两面钉着。
 
 ## 上游有两个,互相独立
 
@@ -187,11 +221,14 @@ npm pack
 ```bash
 DSH_NM=<全局 dsh 安装>/node_modules   # 例:$(dirname "$(readlink -f "$(which dsh)")")/../node_modules
 mkdir -p node_modules/@deepseek-ai node_modules/@earendil-works
-for p in dsh-llm dsh-timeout dsh-credentials schemastery; do
+for p in dsh-llm dsh-timeout dsh-credentials dsh-attachment cosmokit schemastery; do
   ln -sfn "$DSH_NM/@deepseek-ai/$p" "node_modules/@deepseek-ai/$p"
 done
 ln -sfn "$DSH_NM/@earendil-works/pi-ai" "node_modules/@earendil-works/pi-ai"
 ```
+
+(`dsh-attachment` 是 0.1.7 起图片链路要的:`readImageRequest` 现在收 `{width,height,maxBytes}` 的
+**目标**,尺寸投影由路由自己做,所以直接 import 宿主的 `requestImageDimensions`,不自己写一份。)
 
 注意**动态 `import()` 也要覆盖**:`dsh-credentials` 与 `pi-ai`(含三个 `.lazy` 子路径)
 是运行期按需导入的,静态 `from '…'` 扫描抓不到——漏了就是"启动正常、点某个按钮才

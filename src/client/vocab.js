@@ -111,14 +111,6 @@ export const SUBS_NAME_PLACEHOLDER = '例如：工作号'
 export const SUBS_KEY_LABEL = 'API 密钥'
 export const SUBS_KEY_PLACEHOLDER = '粘贴 API 密钥'
 
-/**
- * The API key hint. The promise this field makes: the value goes through
- * `ctx.credentials` into `$DSH_HOME/.credentials.yaml` (or the launch
- * environment), and the settings document only ever records the slot NAME.
- */
-export const API_KEY_HINT =
-  '存入凭据存储，不落明文；留空 = 不改。'
-
 /** The session header the relay requires unless configured otherwise (mirrors `DEFAULT_SESSION_HEADER`). */
 export const DEFAULT_SESSION_HEADER = 'x-opencode-session'
 

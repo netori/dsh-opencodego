@@ -49,11 +49,11 @@ import { defaultUsageLayerPath } from './usage.js'
 import { syncModel, syncedLayerFromSync } from './sync.js'
 import {
   Config,
+  createOptionsReader,
   DEFAULT_API_KEY_ENV,
   PKG,
   PROVIDER,
   NS,
-  resolveOptions,
 } from './config.js'
 
 export { OpenCodeGoAdapter } from './adapter.js'
@@ -214,28 +214,24 @@ export const inject = ['llm']
  * @param {import('./config.js').Config} config - the composition/settings config.
  */
 export function apply(ctx, config) {
-  // Resolve once at load so a structurally invalid composition fails loudly
-  // rather than at the first request. A live settings snapshot (phase 4) that
-  // fails beyond-schema bounds keeps the last good facts.
+  // The facts every operation re-resolves through. `createOptionsReader` (see
+  // `config.js`) re-reads the LIVE config on every call — in dsh 0.2.0 a
+  // settings write commits new values INTO this config object's volatile
+  // references instead of re-applying the entry, so memoizing on the object's
+  // identity would answer with the load-time snapshot forever. It still hands
+  // back the same resolved object while the facts are unchanged, which is what
+  // the adapter's derived state is keyed on.
+  //
+  // The first read happens here, at load, so a structurally invalid composition
+  // fails loudly rather than at the first request; a later snapshot that fails
+  // beyond-schema bounds keeps the last good facts and is logged.
   let current = () => config
-  let lastRaw
-  let lastGood
-  const options = () => {
-    const raw = current()
-    if (raw === lastRaw && lastGood !== undefined) return lastGood
-    try {
-      const next = resolveOptions(raw)
-      lastRaw = raw
-      lastGood = next
-      return next
-    } catch (error) {
-      if (lastGood === undefined) throw error
-      lastRaw = raw
+  const options = createOptionsReader(() => current(), {
+    onInvalid: (error) => {
       ctx.logger.error(`${PKG}: keeping the last good configuration after an invalid settings snapshot`)
       ctx.logger.error(error)
-      return lastGood
-    }
-  }
+    },
+  })
   const initial = options()
 
   /**
@@ -598,34 +594,29 @@ export function apply(ctx, config) {
     log,
   })
 
-  // The settings service owns the section that can carry the legacy field; the
-  // credentials service owns the destination. Whichever arrives second unblocks
-  // the migration, and the settings-change hook retries on every write.
+  // The settings surface (dsh 0.1.7 model). There is no section to install and
+  // no live source to adopt any more: the host projects THIS entry's Config
+  // schema — its `volatile()` fields, see `config.js` — into the descriptor the
+  // page reads and a write lands in the active profile patch. `apply` does NOT
+  // run again for such a write: the loader commits the new values into the
+  // volatile references of the config object this call was handed (0.2.0,
+  // `Entry#_commitVolatile`) and emits `loader/volatile-update`. So `current`
+  // stays `() => config`, but the READING of it must be live — that is
+  // `createOptionsReader`, and it is the difference between "the page shows a
+  // subscription" and "the host has one".
+  //
+  // What is left for the plugin to declare is the page policy — it ships its own
+  // page, so the shell must not auto-generate a second one — plus the two pieces
+  // of work a settings write used to trigger through the removed `onChange`
+  // hook: the legacy key migration and the live-slot mirror. Both are cheap and
+  // idempotent, so they also run here at load; the mirror additionally runs on
+  // every `/usage` read, which is the moment a switch must have landed by.
   ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, NS, Config, config, {
-      validate: (value) => {
-        resolveOptions(value)
-      },
-      setSource: (source) => {
-        current = source
-      },
-      // `installSection` calls this on registration and on every settings
-      // change; omitting it made the whole registration throw
-      // (`hooks.onChange is not a function`, observed live). Nothing needs
-      // invalidating here: `options()` memoizes on the identity of the source's
-      // value, so a change re-resolves on its own and the adapter's derived
-      // state is keyed on that resolved object.
-      onChange: () => {
-        log('info', 'settings changed; the next request re-resolves the configuration')
-        void runLegacyMigration()
-        // A switch is a settings write, so this is where the ONE live slot is
-        // pointed at the newly active subscription — before any request asks.
-        void subs.reconcile().catch((error) => {
-          log('warn', `could not reconcile the live credential slot: ${errorMessage(error)}`)
-        })
-      },
-    })
+    ctx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
     void runLegacyMigration()
+    // A subscription switch is a settings write, so this is where the ONE live
+    // slot is pointed at the newly active subscription — before any request
+    // asks.
     void subs.reconcile().catch((error) => {
       log('warn', `could not reconcile the live credential slot: ${errorMessage(error)}`)
     })
@@ -636,6 +627,44 @@ export function apply(ctx, config) {
       log('warn', `could not reconcile the live credential slot: ${errorMessage(error)}`)
     })
   })
+
+  /**
+   * The HOST's own view of this entry's settings surface.
+   *
+   * The page's "设置里没有命名空间 opencode-go-native" is only the browser-side
+   * reading of a descriptor that did not list this entry — and every reason for
+   * that is host-side: this composition has no `settings` service, the entry's
+   * fiber is not active, or its Config schema cannot be projected into a form
+   * (`describe()` SKIPS an entry whose schema has no volatile field — that is
+   * the contract `config.js` and `tests/volatile-contract.test.mjs` hold).
+   * Reported through the diagnostics route so the answer is one GET away
+   * instead of one guess away; it reads, and never writes.
+   *
+   * @returns {object} descriptor facts, never a throw.
+   */
+  const settingsProbe = () => {
+    const service = ctx.get('settings')
+    const runtime = ctx.fiber?.runtime
+    const schema = runtime?.Config
+    const facts = {
+      ns: NS,
+      service: service === undefined ? 'missing' : 'present',
+      fiberState: ctx.fiber?.state,
+      // `undefined` here is the whole failure mode: the host's `describe()`
+      // reads the schema off the entry's runtime, so no schema = no namespace.
+      // It is normally lost by the DEFAULT export omitting `Config` (see the
+      // note on `export default` at the bottom of this file).
+      runtimeConfig: schema === undefined ? 'undefined' : typeof schema,
+      hasToJson: schema !== undefined && 'toJSON' in schema,
+    }
+    if (service === undefined) return facts
+    try {
+      const namespaces = service.describe().map((view) => view.ns)
+      return { ...facts, listed: namespaces.includes(NS), namespaces }
+    } catch (error) {
+      return { ...facts, described: `failed: ${errorMessage(error)}` }
+    }
+  }
 
   // ── read-only HTTP surface for the phase-4b settings page ────────────────
   // The page is a browser half, so it cannot import the host module: it needs a
@@ -687,7 +716,13 @@ export function apply(ctx, config) {
           return
         }
         if (route === 'GET /opencode-go-native/diagnostics') {
-          send(200, { ok: true, diagnostics: adapter.diagnostics() })
+          // `settings` rides along because it answers the one failure the page
+          // cannot explain by itself: "设置里没有命名空间 opencode-go-native" is
+          // the browser-side reading of "the host's descriptor did not list this
+          // entry", and the reasons (no `settings` service, entry not active, a
+          // Config schema the host cannot project into a form) are all HOST-side
+          // facts. Read-only, same fence as the rest of this route.
+          send(200, { ok: true, diagnostics: { ...adapter.diagnostics(), settings: settingsProbe() } })
           return
         }
         if (route === 'GET /opencode-go-native/models') {
@@ -961,5 +996,19 @@ async function readJsonBody(req, limit = 65_536) {
   }
 }
 
-/** The cordis plugin object form, for loaders that consume a default export. */
-export default { name, inject, apply }
+/**
+ * The cordis plugin object, in the shape the LOADER actually consumes.
+ *
+ * `@deepseek-ai/cordis-plugin-loader#unwrapExports` PREFERS `default` over the
+ * module namespace (`exports.default ?? exports`), and the registry builds the
+ * plugin's runtime from whatever object that returns
+ * (`runtime = { name, callback, fibers, Config: plugin.Config }`). So a default
+ * export that omits `Config` costs the entry its SCHEMA, not merely a
+ * convenience: `@deepseek-ai/dsh-settings#schema` reads
+ * `entry.fiber.runtime.Config`, and `describe()` SKIPS an entry without one.
+ * The plugin still loads, still applies, still serves every route — and its
+ * settings namespace silently does not exist, which the page reports as
+ * 「设置里没有命名空间 opencode-go-native」. `tests/loader-contract.test.mjs`
+ * unwraps the built module this same way and pins the fields.
+ */
+export default { name, inject, Config, apply }

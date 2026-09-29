@@ -34,7 +34,6 @@ import {
 } from '../src/vocab.js'
 import {
   ADD_MODEL_HINT,
-  API_KEY_HINT,
   CONFIGURABLE_INPUT_MODALITIES,
   CONFIGURABLE_THINKING_LEVELS,
   CREDENTIAL_REF_PATTERN as CLIENT_CREDENTIAL_REF_PATTERN,
@@ -119,8 +118,6 @@ test('the page carries its warnings and its selection promise verbatim', () => {
   assert.match(FETCH_DESCRIPTION, /不显示能力值/u)
   assert.match(FETCH_DESCRIPTION, /立即生效/u)
   assert.match(ADD_MODEL_HINT, /内置模型状态/u)
-  assert.match(API_KEY_HINT, /凭据存储/u)
-  assert.match(API_KEY_HINT, /不落明文/u)
   assert.match(LEGACY_API_KEY_WARNING, /明文/u)
   assert.match(SESSION_HEADER_HINT, /RFC 7230/u)
 })

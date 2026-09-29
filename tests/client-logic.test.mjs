@@ -745,9 +745,10 @@ test('preserveDraftScalars keeps the unsaved typing across a models commit', () 
 })
 
 test('the credential copy says where the value goes', async () => {
-  const { API_KEY_HINT, SESSION_HEADER_HINT, LEGACY_API_KEY_WARNING } = await import('../src/client/vocab.js')
-  assert.match(API_KEY_HINT, /凭据存储/u)
-  assert.match(API_KEY_HINT, /不落明文/u)
+  // The key field carries no hint line any more (the promise moved to the slot
+  // tooltip and the credential pill); what stays pinned is the migration
+  // warning and the session-header grammar.
+  const { SESSION_HEADER_HINT, LEGACY_API_KEY_WARNING } = await import('../src/client/vocab.js')
   assert.match(LEGACY_API_KEY_WARNING, /迁移/u)
   assert.match(SESSION_HEADER_HINT, /RFC 7230/u)
 })

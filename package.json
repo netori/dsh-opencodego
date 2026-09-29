@@ -1,6 +1,6 @@
 {
   "name": "dsh-opencodego",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "DeepSeek Harness plugin: a single provider route 'opencode-go-native' that serves every OpenCode Go (and OpenCode-style OpenAI-compatible gateway) model with the correct wire protocol per model \u2014 openai-completions / openai-responses / anthropic-messages \u2014 resolved from the models.dev per-model `provider.npm` recommendation and verified against the gateway. Capability facts are NOT assumed: a per-model SYNC asks the gateway which protocols answer, verifies the official reasoning contract (falling back to the full ladder only when there is none), and reads context/output/modalities from a bundled models.dev baseline. The model list is a plain membership list; nothing is enabled until the operator picks it. Credentials live in the host credential store. Dual-face: the host half registers the adapter, the settings section and a narrow diagnostics/discovery/sync HTTP surface; the browser half adds an OpenCode Go page with '\u83b7\u53d6\u53ef\u7528\u6a21\u578b' (pick-to-activate) and '\u4fe1\u606f\u540c\u6b65' (per-model capability sync with live progress).",
   "type": "module",
   "main": "lib/index.js",
@@ -66,13 +66,15 @@
     "node": ">=20"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-credentials": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-host-webserver": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-llm": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-settings": "^0.1.5-rc.1",
-    "@deepseek-ai/dsh-timeout": "^0.1.5-rc.1",
-    "@deepseek-ai/schemastery": "^3.18.2",
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/cosmokit": "^1.8.5",
+    "@deepseek-ai/dsh-attachment": "^0.1.7-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-credentials": "^0.1.7-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.7-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.1.7-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-settings": "^0.1.7-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-timeout": "^0.1.7-rc.1 || ^0.2.0-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.4",
     "@earendil-works/pi-ai": "^0.85.1",
     "react": "^18.2.0"
   },
