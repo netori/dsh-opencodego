@@ -290,7 +290,7 @@ function appendAssistant(message, messages, toolNames, facts) {
  */
 function assertSupportedImageRoles(messages) {
   for (const message of messages) {
-    if (message.role !== 'user' && contentHasImage(message.content)) {
+    if (message.role === 'assistant' && contentHasImage(message.content)) {
       throw new LlmError(
         `opencode-go-native: cannot represent an image in an in-history ${message.role} message`,
         'UNSUPPORTED_CONTENT',
